@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="bg">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spotify Gesture Controller</title>
+
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #121212;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        h1 {
+            color: #1DB954;
+            margin-bottom: 20px;
+        }
+
+        .container {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            background: #000;
+        }
+
+        /* Видеото е скрито, рисуваме само върху канваса */
+        video {
+            display: none;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+            /* Огледален образ */
+        }
+
+        .main-wrapper {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            gap: 40px;
+            max-width: 1100px;
+            width: 100%;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            align-items: flex-start;
+            max-width: 320px;
+        }
+
+        button {
+            background-color: #1DB954;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #1ed760;
+            transform: scale(1.05);
+        }
+
+        #status {
+            font-size: 18px;
+            font-weight: bold;
+            color: #b3b3b3;
+            line-height: 1.6;
+        }
+
+        .active-user {
+            color: #1DB954 !important;
+            text-align: left;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Spotify Gesture Controller</h1>
+
+    <div class="main-wrapper">
+        <div class="container">
+            <!-- Камера (скрита) -->
+            <video id="input_video" autoplay playsinline></video>
+            <!-- Платно за рисуване на жестовете (MediaPipe) -->
+            <canvas id="output_canvas" width="640" height="480"></canvas>
+        </div>
+
+        <div class="controls">
+            <button id="login-btn">Login to Spotify</button>
+            <div id="status">Waiting for login...</div>
+        </div>
+    </div>
+
+    <!-- Зареждаме нашия скрипт за Spotify интеграция -->
+    <script src="spotifyIntegration.js"></script>
+
+    <!-- Главният скрипт (MediaPipe + Gesture Logic) -->
+    <script>
+        // ----------------------------------------------------
+        // 1. UI ОБНОВЯВАНЕ според Spotify токена (PKCE Flow)
+        // ----------------------------------------------------
+        const loginBtn = document.getElementById('login-btn');
+        const statusText = document.getElementById('status');
+
+        window.onSpotifyReady = (token) => {
+            if (token) {
+                loginBtn.style.display = 'none';
+                statusText.innerHTML = '<strong>Instructions:</strong> <br>Place your hand in front of the camera. <br>👉 <strong>Next track</strong>: Point right with your index finger.<br>👈 <strong>Previous track</strong>: Point left with your index finger.<br>✋ <strong>Pause/Play</strong>: Open your palm.';
+                statusText.classList.add('active-user');
+            } else {
+                loginBtn.addEventListener('click', () => {
+                    proceedToLogin();
+                });
+            }
+        };
+
+        // ----------------------------------------------------
+        // 2. LOGIC ЗА РАЗПОЗНАВАНЕ НА ЖЕСТОВЕ (Прост "Swipe Right")
+        // ----------------------------------------------------
+        let previousX = null;
+        let previousTime = Date.now();
+
+        function getDistance(a, b) {
+            return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
+        }
+
+        function isOpenPalm(landmarks) {
+            // За отворена длан, проверяваме дали четирите пръста са изпънати (връхчетата са по-далеч от китката спрямо ставите им)
+            const isIndexExtended = getDistance(landmarks[0], landmarks[8]) > getDistance(landmarks[0], landmarks[6]) + 0.02;
+            const isMiddleExtended = getDistance(landmarks[0], landmarks[12]) > getDistance(landmarks[0], landmarks[10]) + 0.02;
+            const isRingExtended = getDistance(landmarks[0], landmarks[16]) > getDistance(landmarks[0], landmarks[14]) + 0.02;
+            const isPinkyExtended = getDistance(landmarks[0], landmarks[20]) > getDistance(landmarks[0], landmarks[18]) + 0.02;
+
+            return isIndexExtended && isMiddleExtended && isRingExtended && isPinkyExtended;
+        }
+
+        function detectGesture(landmarks) {
+            // Първо проверяваме за отворена длан (този жест е за Пауза/Play)
+            if (isOpenPalm(landmarks)) {
+                return 'OPEN_PALM';
+            }
+
+            // За надеждност проверяваме дали разстоянието от върха на пръста до китката е малко
+            const isMiddleCurled = getDistance(landmarks[0], landmarks[12]) < getDistance(landmarks[0], landmarks[9]);
+            const isRingCurled = getDistance(landmarks[0], landmarks[16]) < getDistance(landmarks[0], landmarks[13]);
+            const isPinkyCurled = getDistance(landmarks[0], landmarks[20]) < getDistance(landmarks[0], landmarks[17]);
+
+            // Показалецът трябва да е изпънат 
+            const isIndexExtended = getDistance(landmarks[0], landmarks[8]) > getDistance(landmarks[0], landmarks[6]) + 0.02;
+
+            if (isMiddleCurled && isRingCurled && isPinkyCurled && isIndexExtended) {
+                const dx = landmarks[8].x - landmarks[6].x;
+                const dy = landmarks[8].y - landmarks[6].y;
+
+                // Проверяваме дали показалецът е по-хоризонтален (dx > dy)
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    // Камерата е огледална (scaleX(-1)):
+                    // Ако dx е отрицателно (по-малка стойност на X), реално пръстът сочи надясно
+                    if (dx < -0.05) {
+                        return 'RIGHT';
+                    }
+                    // Ако dx е положително (по-голяма стойност на X), реално пръстът сочи наляво
+                    else if (dx > 0.05) {
+                        return 'LEFT';
+                    }
+                }
+            }
+            return null;
+        }
+
+
+        // ----------------------------------------------------
+        // 3. MEDIAPIPE HANDS НАСТРОЙКИ
+        // ----------------------------------------------------
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+
+        function onResults(results) {
+            // Рисуваме видеото
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            // Ако има засечени ръце
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#1DB954', lineWidth: 4 });
+                    drawLandmarks(canvasCtx, landmarks, { color: '#ffffff', lineWidth: 2, radius: 4 });
+
+                    // Викаме общата логика за детекция и свързването със Spotify (от spotifyIntegration.js)
+                    const gestureDirection = detectGesture(landmarks);
+                    if (gestureDirection) {
+                        onFrameUpdate(gestureDirection);
+                    }
+                }
+            } else {
+                // Изчистваме позицията ако няма ръка
+                previousX = null;
+            }
+            canvasCtx.restore();
+        }
+
+        const hands = new Hands({
+            locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 640,
+            height: 480
+        });
+
+        camera.start();
+    </script>
+</body>
+
+</html>
