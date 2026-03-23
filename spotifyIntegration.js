@@ -2,8 +2,10 @@
 
 // 1. Модул за автентикация (Authorization Code с PKCE)
 const SpotifyAuth = (() => {
-    const CLIENT_ID = '415ea275561548f0b7ae309c0bd57463';
-    const REDIRECT_URI = 'http://127.0.0.1:5500/';
+    const CLIENT_ID = '930fe6ac000040789670bdee73370f67';
+    const REDIRECT_URI = window.location.hostname === 'boyan077.github.io' 
+        ? 'https://boyan077.github.io/' 
+        : 'http://127.0.0.1:5500/';
     const SCOPES = ['user-modify-playback-state'].join(' ');
 
     const generateRandomString = (length) => {
@@ -112,6 +114,10 @@ const SpotifyController = (() => {
 
             if (response.ok || response.status === 204) {
                 console.log('Песента беше успешно превключена!');
+            } else if (response.status === 401) {
+                console.error('Токенът за достъп (access token) е изтекъл или невалиден! Моля, влезте отново.');
+                localStorage.removeItem('spotify_access_token');
+                // window.location.reload(); // Опционално презареждане на страницата
             } else if (response.status === 403) {
                 console.warn('Нямате права, или потребителят не е Premium.');
             } else if (response.status === 404) {
@@ -121,7 +127,7 @@ const SpotifyController = (() => {
                 console.error('Грешка при превключване:', errorData);
             }
         } catch (error) {
-            console.error('Мрежовка грешка:', error);
+            console.error('Мрежова грешка:', error);
         }
     };
 
@@ -234,3 +240,4 @@ function onFrameUpdate(gesture) {
         }
     }
 }
+
